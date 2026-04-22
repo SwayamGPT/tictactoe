@@ -14,8 +14,8 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Download Windows SFML
-      run: Invoke-WebRequest -Uri "https://www.sfml-dev.org/files/SFML-2.6.2-windows-vc17-64-bit.zip" -OutFile "sfml.zip"
-
+      run: Invoke-WebRequest -Uri "https://github.com/SFML/SFML/releases/download/2.6.2/SFML-2.6.2-windows-vc17-64-bit.zip" -OutFile "sfml.zip"
+      
     - name: Extract SFML
       run: Expand-Archive sfml.zip -DestinationPath C:\SFML
 
