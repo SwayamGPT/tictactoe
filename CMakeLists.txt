@@ -1,22 +1,26 @@
 cmake_minimum_required(VERSION 3.10)
 project(TicTacToe)
 
-# Set C++ Standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Silence Apple's deprecation warnings for SFML headers
-add_compile_options(-Wno-deprecated-declarations)
+# Silence Mac warnings
+if(APPLE)
+    add_compile_options(-Wno-deprecated-declarations)
+endif()
 
-# Find SFML Installation on your Mac
+# Find SFML
 find_package(SFML 2.5 COMPONENTS graphics window system network audio REQUIRED)
 
-# Specify resources to bundle into the .app
 set(RESOURCE_FILES "arial.ttf")
-set_source_files_properties(${RESOURCE_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 
-# Create the .app wrapper using tictactoe.cpp instead of main.cpp
-add_executable(TicTacToe MACOSX_BUNDLE tictactoe.cpp ${RESOURCE_FILES})
+if(APPLE)
+    # Mac Build Instructions
+    set_source_files_properties(${RESOURCE_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    add_executable(TicTacToe MACOSX_BUNDLE tictactoe.cpp ${RESOURCE_FILES})
+else()
+    # Windows Build Instructions (WIN32 hides the console window)
+    add_executable(TicTacToe WIN32 tictactoe.cpp ${RESOURCE_FILES})
+endif()
 
-# Link SFML libraries
 target_link_libraries(TicTacToe sfml-graphics sfml-window sfml-system sfml-network sfml-audio)
