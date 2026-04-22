@@ -10,13 +10,10 @@ using namespace std;
 
 // ================= CONSTANTS & SETTINGS =================
 const int WINDOW_W = 400;
-const int WINDOW_H = 580; // Taller to fit new buttons
+const int WINDOW_H = 580;
 const int BOARD_OFFSET_X = 50;
 const int BOARD_OFFSET_Y = 210;
 const int CELL_SIZE = 100;
-
-// CHANGE THIS TO YOUR VPS/SERVER IP FOR GLOBAL INTERNET MULTIPLAYER
-const string SERVER_IP = "127.0.0.1";
 const unsigned short PORT = 53000;
 
 // ================= UI & LOGIC CLASSES =================
@@ -112,8 +109,6 @@ public:
         winCells = {{i, 0}, {i, 1}, {i, 2}};
         return grid[i][0];
       }
-    }
-    for (int i = 0; i < 3; i++) {
       if (grid[0][i] != ' ' && grid[0][i] == grid[1][i] &&
           grid[1][i] == grid[2][i]) {
         winCells = {{0, i}, {1, i}, {2, i}};
@@ -205,7 +200,7 @@ public:
 // ================= MAIN GAME LOOP =================
 class Game {
 public:
-  enum State { MENU, PLAYING, GAME_OVER, WAITING_CONNECTION };
+  enum State { MENU, ENTER_IP, PLAYING, GAME_OVER, WAITING_CONNECTION };
   enum Mode { LOCAL, AI_MODE, NET_HOST, NET_CLIENT };
 
   State state = MENU;
@@ -215,22 +210,22 @@ public:
   Board board;
   AI ai;
 
-  bool playerTurn = true; // True = X's turn, False = O's turn
+  bool playerTurn = true;
   string result = "";
+  string ipInput = "";
+  string localIpAddress = "";
 
   TcpSocket socket;
   TcpListener listener;
 
   Font font;
-  Button btnAI, btnDiff, btnLocal, btnHost, btnJoin;
+  Button btnAI, btnDiff, btnLocal, btnHost, btnJoin, btnConnect;
 
   float animScale[3][3] = {0};
   float animAlpha[3][3] = {0};
   Clock clock;
 
   Game() {
-    // macOS App Bundles look for assets in the Resources folder. We check
-    // multiple paths.
     if (!font.loadFromFile("arial.ttf"))
       if (!font.loadFromFile("../Resources/arial.ttf"))
         font.loadFromFile("/System/Library/Fonts/Supplemental/Arial.ttf");
@@ -239,8 +234,9 @@ public:
     btnAI = Button({250, 45}, {75, startY}, "Play vs AI", font);
     btnDiff = Button({250, 45}, {75, startY + 60}, "AI: Hard", font);
     btnLocal = Button({250, 45}, {75, startY + 120}, "2 Player Local", font);
-    btnHost = Button({250, 45}, {75, startY + 180}, "Host Server", font);
-    btnJoin = Button({250, 45}, {75, startY + 240}, "Join Server", font);
+    btnHost = Button({250, 45}, {75, startY + 180}, "Host Game", font);
+    btnJoin = Button({250, 45}, {75, startY + 240}, "Join Game", font);
+    btnConnect = Button({200, 45}, {100, 300}, "Connect", font);
 
     srand(time(0));
   }
@@ -255,6 +251,34 @@ public:
         animScale[i][j] = 0;
         animAlpha[i][j] = 0;
       }
+  }
+
+  void handleText(Uint32 unicode) {
+    if (state == ENTER_IP) {
+      if (unicode == '\b') { // Backspace
+        if (!ipInput.empty())
+          ipInput.pop_back();
+      } else if (unicode == '\r' || unicode == '\n') { // Enter
+        joinServer();
+      } else if (unicode >= 32 && unicode < 128 && ipInput.size() < 15) {
+        ipInput += static_cast<char>(unicode);
+      }
+    }
+  }
+
+  void joinServer() {
+    mode = NET_CLIENT;
+    state = WAITING_CONNECTION;
+    socket.setBlocking(true); // Temporarily block to establish connection
+
+    // Attempt connection with a 3 second timeout
+    if (socket.connect(ipInput, PORT, seconds(3)) == sf::Socket::Done) {
+      socket.setBlocking(false);
+      reset();
+    } else {
+      result = "Connection Failed!";
+      state = GAME_OVER;
+    }
   }
 
   void handleClick(Vector2i m) {
@@ -279,23 +303,17 @@ public:
       } else if (btnHost.isClicked(m)) {
         mode = NET_HOST;
         state = WAITING_CONNECTION;
+        localIpAddress = IpAddress::getLocalAddress().toString();
+
         listener.listen(PORT);
-        socket.setBlocking(true); // Block just until client connects
-        if (listener.accept(socket) == sf::Socket::Done) {
-          socket.setBlocking(false); // Non-blocking for gameplay
-          reset();
-        } else
-          state = MENU;
+        listener.setBlocking(false); // CRITICAL: Stop the UI from freezing
       } else if (btnJoin.isClicked(m)) {
-        mode = NET_CLIENT;
-        state = WAITING_CONNECTION;
-        socket.setBlocking(true);
-        if (socket.connect(SERVER_IP, PORT, seconds(5)) == sf::Socket::Done) {
-          socket.setBlocking(false);
-          reset();
-        } else
-          state = MENU;
+        state = ENTER_IP;
+        ipInput = "";
       }
+    } else if (state == ENTER_IP) {
+      if (btnConnect.isClicked(m))
+        joinServer();
     } else if (state == PLAYING) {
       if (m.x >= BOARD_OFFSET_X && m.x <= BOARD_OFFSET_X + 300 &&
           m.y >= BOARD_OFFSET_Y && m.y <= BOARD_OFFSET_Y + 300) {
@@ -303,7 +321,6 @@ public:
         int x = (m.x - BOARD_OFFSET_X) / CELL_SIZE;
         int y = (m.y - BOARD_OFFSET_Y) / CELL_SIZE;
 
-        // Validate if it is actually the local player's turn to click
         bool canPlayLocal = false;
         if (mode == LOCAL || mode == AI_MODE)
           canPlayLocal = true;
@@ -314,7 +331,6 @@ public:
 
         if (canPlayLocal && y < 3 && x < 3 && board.grid[y][x] == ' ') {
           board.move(y, x, playerTurn ? 'X' : 'O');
-
           if (mode == NET_HOST || mode == NET_CLIENT) {
             sf::Packet packet;
             packet << y << x;
@@ -324,7 +340,8 @@ public:
         }
       }
     } else if (state == GAME_OVER) {
-      socket.disconnect(); // Close network cleanly
+      socket.disconnect();
+      listener.close();
       state = MENU;
     }
   }
@@ -332,6 +349,7 @@ public:
   void update() {
     float dt = clock.restart().asSeconds();
 
+    // UI Animations
     for (int i = 0; i < 3; i++)
       for (int j = 0; j < 3; j++)
         if (board.grid[i][j] != ' ') {
@@ -343,10 +361,19 @@ public:
             animAlpha[i][j] = 255.0f;
         }
 
+    // Host Connection Listening (Non-Blocking)
+    if (state == WAITING_CONNECTION && mode == NET_HOST) {
+      if (listener.accept(socket) == sf::Socket::Done) {
+        socket.setBlocking(false); // Make gameplay non-blocking
+        reset();
+      }
+      return; // Don't process game logic while waiting
+    }
+
     if (state != PLAYING)
       return;
 
-    // Check Networking (Receive opponent's move)
+    // Receive Opponent Move
     if ((mode == NET_HOST && !playerTurn) ||
         (mode == NET_CLIENT && playerTurn)) {
       sf::Packet packet;
@@ -363,7 +390,6 @@ public:
       }
     }
 
-    // Check Win Condition
     char w = board.checkWin();
     if (w != ' ') {
       result = (w == 'X' ? "Player 1 (X) Wins!" : "Player 2 (O) Wins!");
@@ -376,7 +402,6 @@ public:
       return;
     }
 
-    // Trigger AI Turn
     if (mode == AI_MODE && !playerTurn) {
       ai.playMove(board, aiDiff);
       playerTurn = true;
@@ -419,15 +444,40 @@ public:
       return;
     }
 
+    if (state == ENTER_IP) {
+      Text prompt("Enter Host IP Address:", font, 20);
+      prompt.setPosition(50, 180);
+      w.draw(prompt);
+
+      RectangleShape inputBox({300, 40});
+      inputBox.setPosition(50, 220);
+      inputBox.setFillColor(Color(30, 30, 45));
+      inputBox.setOutlineThickness(2);
+      inputBox.setOutlineColor(Color(100, 100, 150));
+      w.draw(inputBox);
+
+      Text ipText(ipInput + "_", font, 22);
+      ipText.setPosition(60, 225);
+      w.draw(ipText);
+
+      btnConnect.update(Mouse::getPosition(w));
+      btnConnect.draw(w);
+      return;
+    }
+
     if (state == WAITING_CONNECTION) {
-      Text wait("Waiting for connection...", font, 20);
-      wait.setPosition(80, 250);
+      string msg =
+          (mode == NET_HOST)
+              ? "Waiting for connection...\n\nYour LAN IP: " + localIpAddress
+              : "Connecting to " + ipInput + "...";
+      Text wait(msg, font, 20);
+      wait.setPosition(50, 250);
       wait.setFillColor(Color(0, 200, 255));
       w.draw(wait);
       return;
     }
 
-    // Draw Board
+    // Draw Grid
     RectangleShape line({300, 4});
     line.setFillColor(Color(100, 100, 140, 150));
     for (int i = 1; i < 3; i++) {
@@ -470,7 +520,6 @@ public:
       }
     }
 
-    // Draw Win Line
     if (board.winCells.size() == 3) {
       Vector2f s(BOARD_OFFSET_X + board.winCells[0].y * CELL_SIZE + 50,
                  BOARD_OFFSET_Y + board.winCells[0].x * CELL_SIZE + 50);
@@ -517,6 +566,8 @@ int main() {
     while (window.pollEvent(e)) {
       if (e.type == Event::Closed)
         window.close();
+      if (e.type == Event::TextEntered)
+        game.handleText(e.text.unicode);
       if (e.type == Event::MouseButtonPressed &&
           e.mouseButton.button == Mouse::Left)
         game.handleClick(Mouse::getPosition(window));
