@@ -9,7 +9,7 @@ if(APPLE)
     add_compile_options(-Wno-deprecated-declarations)
 endif()
 
-# Find SFML
+# Find standard SFML components
 find_package(SFML 2.5 COMPONENTS graphics window system network audio REQUIRED)
 
 set(RESOURCE_FILES "arial.ttf")
@@ -18,9 +18,11 @@ if(APPLE)
     # Mac Build Instructions
     set_source_files_properties(${RESOURCE_FILES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
     add_executable(TicTacToe MACOSX_BUNDLE tictactoe.cpp ${RESOURCE_FILES})
+    target_link_libraries(TicTacToe sfml-graphics sfml-window sfml-system sfml-network sfml-audio)
 else()
-    # Windows Build Instructions (WIN32 hides the console window)
+    # Windows Build Instructions
+    # We must explicitly find and link 'sfml-main' for Windows
+    find_package(SFML 2.5 COMPONENTS main REQUIRED)
     add_executable(TicTacToe WIN32 tictactoe.cpp ${RESOURCE_FILES})
+    target_link_libraries(TicTacToe sfml-main sfml-graphics sfml-window sfml-system sfml-network sfml-audio)
 endif()
-
-target_link_libraries(TicTacToe sfml-graphics sfml-window sfml-system sfml-network sfml-audio)
